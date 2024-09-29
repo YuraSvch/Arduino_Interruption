@@ -1,0 +1,86 @@
+#include <Encoder.h>
+#include <PinChangeInterrupt.h>
+
+const int ledPins[] = {5, 6, 9, 10};   
+int sequenceStep = 0;
+unsigned long buttonPressTime = 0;  // Button press time
+unsigned long longPressDuration = 2000;  // Duration for long press
+bool longPressActive = false;  // Long press state
+bool buttonPressed = false;  // Button state
+int brightness = 128;
+const int buttonPin = 7;  // Encoder button pin
+volatile bool buttonState = HIGH;  // Current button state
+volatile bool lastButtonState = HIGH;  // Last button state
+
+Encoder myEnc(2, 4);  
+long oldPosition  = -999;
+
+void setup() {
+  for (int i = 0; i < 4; i++) {
+    pinMode(ledPins[i], OUTPUT);
+    analogWrite(ledPins[i], 0);  // Turn off all LEDs
+  }
+
+  pinMode(buttonPin, INPUT_PULLUP);
+
+  // Set up interrupt for the button
+  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(buttonPin), handleButtonInterrupt, CHANGE);
+
+  // Set up interrupts for the encoder 
+  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(2), handleEncoderInterrupt, CHANGE);
+  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(4), handleEncoderInterrupt, CHANGE);
+
+  Serial.begin(9600);
+}
+
+void loop() {
+  if (buttonPressed && !longPressActive) {
+    buttonPressed = false;  // Reset button state
+    analogWrite(ledPins[sequenceStep], 0);  // Turn off the LED
+    sequenceStep = (sequenceStep + 1) % 4;  // Move to the next LED
+    analogWrite(ledPins[sequenceStep], brightness);  // Turn on the new LED with the same brightness
+  }
+}
+
+// Interrupt handler for the encoder button
+void handleButtonInterrupt() {
+  buttonState = digitalRead(buttonPin);  // Read button state
+
+  // If the button is pressed, record the press time
+  if (buttonState == LOW && lastButtonState == HIGH) {
+    buttonPressTime = millis(); // Calculate press time
+  }
+
+  // If the button is released, check if it was a short press
+  if (buttonState == HIGH && lastButtonState == LOW) {
+    if ((millis() - buttonPressTime) < longPressDuration) {
+      buttonPressed = true;  // Set short press state
+    }
+    longPressActive = false;  // Reset long press state
+  }
+
+  if (buttonState == LOW && (millis() - buttonPressTime > longPressDuration) && !longPressActive) {
+    longPressActive = true;  // Activate long press
+    turnOnAllLEDs();
+  }
+
+  lastButtonState = buttonState;  // Update button state
+}
+
+// Interrupt handler for the encoder
+void handleEncoderInterrupt() {
+  long newPosition = myEnc.read();  // Read current encoder position
+
+  if (newPosition != oldPosition) {
+    int change = (newPosition - oldPosition);  // Determine position change
+    brightness = constrain(brightness + change * 5, 0, 255); 
+    analogWrite(ledPins[sequenceStep], brightness);  // Update LED brightness
+    oldPosition = newPosition;  // Update position
+  }
+}
+
+void turnOnAllLEDs() {
+  for (int i = 0; i < 4; i++) {
+    analogWrite(ledPins[i], brightness);  // Turn on all LEDs with the same brightness
+  }
+}
